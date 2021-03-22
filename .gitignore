@@ -9,3 +9,6 @@ projects/
 *.tflite
 *.txt
 *.pyc
+.vscode/
+mydata/
+axelerate/networks/common_utils/tmp/
