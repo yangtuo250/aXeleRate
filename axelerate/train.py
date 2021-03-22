@@ -1,5 +1,6 @@
 import shutil
 import numpy as np
+
 np.random.seed(111)
 import argparse
 import os
@@ -21,13 +22,13 @@ tf.get_logger().setLevel('ERROR')
 argparser = argparse.ArgumentParser(
     description='Train and validate YOLO_v2 model on any dataset')
 
-argparser.add_argument(
-    '-c',
-    '--config',
-    default="configs/from_scratch.json",
-    help='path to configuration file')
+argparser.add_argument('-c',
+                       '--config',
+                       default="configs/from_scratch.json",
+                       help='path to configuration file')
 
-def train_from_config(config,project_folder):
+
+def train_from_config(config, project_folder):
     try:
         matplotlib.use('Agg')
     except:
@@ -37,113 +38,110 @@ def train_from_config(config,project_folder):
     try:
         input_size = config['model']['input_size'][:]
     except:
-        input_size = [config['model']['input_size'],config['model']['input_size']]
+        input_size = [
+            config['model']['input_size'], config['model']['input_size']
+        ]
 
     # Create the converter
-    converter = Converter(config['converter']['type'], config['model']['architecture'], config['train']['valid_image_folder'])
+    converter = Converter(config['converter']['type'],
+                          config['model']['architecture'],
+                          config['train']['valid_image_folder'])
+    model_path = None
 
     #  Segmentation network
-    if config['model']['type']=='SegNet':
-        print('Segmentation')           
-        # 1. Construct the model 
-        segnet = create_segnet(config['model']['architecture'],
-                                   input_size,
-                                   config['model']['n_classes'],
-                                   config['weights']['backend'])   
-        # 2. Load the pretrained weights (if any) 
+    if config['model']['type'] == 'SegNet':
+        print('Segmentation')
+        # 1. Construct the model
+        segnet = create_segnet(config['model']['architecture'], input_size,
+                               config['model']['n_classes'],
+                               config['weights']['backend'])
+        # 2. Load the pretrained weights (if any)
         segnet.load_weights(config['weights']['full'], by_name=True)
-        # 3. actual training 
-        model_layers, model_path = segnet.train(config['train']['train_image_folder'],
-                                           config['train']['train_annot_folder'],
-                                           config['train']['actual_epoch'],
-                                           project_folder,
-                                           config["train"]["batch_size"],
-                                           config["train"]["augumentation"],
-                                           config['train']['learning_rate'], 
-                                           config['train']['train_times'],
-                                           config['train']['valid_times'],
-                                           config['train']['valid_image_folder'],
-                                           config['train']['valid_annot_folder'],
-                                           config['train']['first_trainable_layer'],
-                                           config['train']['ignore_zero_class'],
-                                           config['train']['valid_metric'])
-               
+        # 3. actual training
+        model_layers, model_path = segnet.train(
+            config['train']['train_image_folder'],
+            config['train']['train_annot_folder'],
+            config['train']['actual_epoch'], project_folder,
+            config["train"]["batch_size"], config["train"]["augumentation"],
+            config['train']['learning_rate'], config['train']['train_times'],
+            config['train']['valid_times'],
+            config['train']['valid_image_folder'],
+            config['train']['valid_annot_folder'],
+            config['train']['first_trainable_layer'],
+            config['train']['ignore_zero_class'],
+            config['train']['valid_metric'])
+
     #  Classifier
-    if config['model']['type']=='Classifier':
-        print('Classifier')           
+    if config['model']['type'] == 'Classifier':
+        print('Classifier')
         if config['model']['labels']:
             labels = config['model']['labels']
         else:
             labels = get_labels(config['train']['train_image_folder'])
-                 # 1. Construct the model 
-        classifier = create_classifier(config['model']['architecture'],
-                                       labels,
+            # 1. Construct the model
+        classifier = create_classifier(config['model']['architecture'], labels,
                                        input_size,
                                        config['model']['fully-connected'],
                                        config['model']['dropout'],
                                        config['weights']['backend'],
-                                       config['weights']['save_bottleneck'])   
-        # 2. Load the pretrained weights (if any) 
+                                       config['weights']['save_bottleneck'])
+        # 2. Load the pretrained weights (if any)
         classifier.load_weights(config['weights']['full'], by_name=True)
 
-        # 3. actual training 
-        model_layers, model_path = classifier.train(config['train']['train_image_folder'],
-                                               config['train']['actual_epoch'],
-                                               project_folder,
-                                               config["train"]["batch_size"],
-                                               config["train"]["augumentation"],
-                                               config['train']['learning_rate'], 
-                                               config['train']['train_times'],
-                                               config['train']['valid_times'],
-                                               config['train']['valid_image_folder'],
-                                               config['train']['first_trainable_layer'],
-                                               config['train']['valid_metric'])
-
-
+        # 3. actual training
+        model_layers, model_path = classifier.train(
+            config['train']['train_image_folder'],
+            config['train']['actual_epoch'], project_folder,
+            config["train"]["batch_size"], config["train"]["augumentation"],
+            config['train']['learning_rate'], config['train']['train_times'],
+            config['train']['valid_times'],
+            config['train']['valid_image_folder'],
+            config['train']['first_trainable_layer'],
+            config['train']['valid_metric'])
 
     #  Detector
-    if config['model']['type']=='Detector':
+    if config['model']['type'] == 'Detector':
         if config['train']['is_only_detect']:
             labels = ["object"]
         else:
             if config['model']['labels']:
                 labels = config['model']['labels']
             else:
-                labels = get_object_labels(config['train']['train_annot_folder'])
+                labels = get_object_labels(
+                    config['train']['train_annot_folder'])
         print(labels)
 
-        # 1. Construct the model 
-        yolo = create_yolo(config['model']['architecture'],
-                           labels,
-                           input_size,
-                           config['model']['anchors'],
-                           config['model']['coord_scale'],
-                           config['model']['class_scale'],
-                           config['model']['object_scale'],
-                           config['model']['no_object_scale'],
-                           config['weights']['backend'])
-        
-        # 2. Load the pretrained weights (if any) 
+        # 1. Construct the model
+        yolo = create_yolo(
+            config['model']['architecture'], labels, input_size,
+            config['model']['anchors'], config['model']['coord_scale'],
+            config['model']['class_scale'], config['model']['object_scale'],
+            config['model']['no_object_scale'], config['weights']['backend'])
+
+        # 2. Load the pretrained weights (if any)
         yolo.load_weights(config['weights']['full'], by_name=True)
 
-        # 3. actual training 
-        model_layers, model_path = yolo.train(config['train']['train_image_folder'],
-                                           config['train']['train_annot_folder'],
-                                           config['train']['actual_epoch'],
-                                           project_folder,
-                                           config["train"]["batch_size"],
-                                           config["train"]["augumentation"],
-                                           config['train']['learning_rate'], 
-                                           config['train']['train_times'],
-                                           config['train']['valid_times'],
-                                           config['train']['valid_image_folder'],
-                                           config['train']['valid_annot_folder'],
-                                           config['train']['first_trainable_layer'],
-                                           config['train']['valid_metric'])
+        # 3. actual training
+        model_layers, model_path = yolo.train(
+            config['train']['train_image_folder'],
+            config['train']['train_annot_folder'],
+            config['train']['actual_epoch'],
+            project_folder,
+            batch_size=config["train"]["batch_size"],
+            jitter=config["train"]["augumentation"],
+            learning_rate=config['train']['learning_rate'],
+            train_times=config['train']['train_times'],
+            valid_times=config['train']['valid_times'],
+            valid_img_folder=config['train']['valid_image_folder'],
+            valid_ann_folder=config['train']['valid_annot_folder'],
+            first_trainable_layer=config['train']['first_trainable_layer'],
+            metrics=config['train']['valid_metric'],
+            validation_freq=config['train']['validation_freq'])
     # 4 Convert the model
     time.sleep(2)
-    converter.convert_model(model_path)    
+    converter.convert_model(model_path)
     return model_path
+
 
 def setup_training(config_file=None, config_dict=None):
     """make directory to save weights & its configuration """
@@ -157,12 +155,14 @@ def setup_training(config_file=None, config_dict=None):
         sys.exit()
     dirname = os.path.join("projects", config['train']['saved_folder'])
     if os.path.isdir(dirname):
-        print("Project folder {} already exists. Creating a folder for new training session.".format(dirname))
+        print(
+            "Project folder {} already exists. Creating a folder for new training session."
+            .format(dirname))
     else:
         print("Project folder {} is created.".format(dirname, dirname))
         os.makedirs(dirname)
 
-    return(train_from_config(config, dirname))
+    return (train_from_config(config, dirname))
 
 
 if __name__ == '__main__':
@@ -170,11 +170,10 @@ if __name__ == '__main__':
     argparser = argparse.ArgumentParser(
         description='Train and validate YOLO_v2 model on any dataset')
 
-    argparser.add_argument(
-        '-c',
-        '--config',
-        default="configs/classifer.json",
-        help='path to configuration file')
+    argparser.add_argument('-c',
+                           '--config',
+                           default="configs/classifer.json",
+                           help='path to configuration file')
 
     args = argparser.parse_args()
     setup_training(config_file=args.config)
