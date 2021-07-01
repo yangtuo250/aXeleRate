@@ -1,4 +1,5 @@
 import glob
+from re import IGNORECASE
 import numpy as np
 import os
 import cv2
@@ -9,6 +10,9 @@ from xml.dom.minidom import parseString
 from lxml.etree import Element, SubElement, tostring
 from os import listdir, getcwd
 from os.path import join
+
+IGNORE_SMALL_OBJ = True
+SMALL_OBJECT_THRETH = 0.073
 
 
 def getImagesInDir():
@@ -52,16 +56,16 @@ def convert_annotation(image_path):
         difficult = obj.find('difficult').text
         cls = obj.find('name').text
         if cls not in classes or int(difficult) == 1:
-            print(image_path, cls)
+            # print(image_path, cls)
             continue
         cls_id = classes.index(cls)
         xmlbox = obj.find('bndbox')
-        b = (float(xmlbox.find('xmin').text), float(xmlbox.find('xmax').text),
-             float(xmlbox.find('ymin').text), float(xmlbox.find('ymax').text))
+        b = (float(xmlbox.find('xmin').text), float(xmlbox.find('xmax').text), float(xmlbox.find('ymin').text),
+             float(xmlbox.find('ymax').text))
         bb = convert((w, h), b)
-        out_file.write(
-            str(cls_id) + " " + str(bb[0]) + " " + str(bb[1]) + " " +
-            str(bb[2]) + " " + str(bb[3]) + '\n')
+        if IGNORE_SMALL_OBJ and (bb[2] < SMALL_OBJECT_THRETH or bb[3] < SMALL_OBJECT_THRETH):
+            continue
+        out_file.write(str(cls_id) + " " + str(bb[0]) + " " + str(bb[1]) + " " + str(bb[2]) + " " + str(bb[3]) + '\n')
 
 
 def VOC2YOLO():
@@ -96,7 +100,7 @@ def YOLO2VOC(classes):
     ids = [x.split('.')[0] for x in l]
 
     annopath = join('./YOLO_annotations', '%s.txt')
-    imgpath = join('./images', '%s.jpg')
+    imgpath = join('./Images', '%s.png')
 
     if not os.path.exists('./VOC_annotations/'):
         os.makedirs('./VOC_annotations/')
@@ -106,7 +110,11 @@ def YOLO2VOC(classes):
     for i in range(len(ids)):
         img_id = ids[i]
         img = cv2.imread(imgpath % img_id)
-        height, width, channels = img.shape
+        try:
+            height, width, channels = img.shape
+        except AttributeError as e:
+            print(imgpath % img_id, "not found! Err: ", e)
+            return
 
         node_root = Element('annotation')
         node_folder = SubElement(node_root, 'folder')
@@ -139,9 +147,10 @@ def YOLO2VOC(classes):
 
             for i in range(len(label_norm)):
                 labels_conv = label_norm[i]
-                new_label = unconvert(labels_conv[0], width, height,
-                                      labels_conv[1], labels_conv[2],
-                                      labels_conv[3], labels_conv[4])
+                if IGNORE_SMALL_OBJ and (labels_conv[3] < SMALL_OBJECT_THRETH or labels_conv[4] < SMALL_OBJECT_THRETH):
+                    continue
+                new_label = unconvert(labels_conv[0], width, height, labels_conv[1], labels_conv[2], labels_conv[3],
+                                      labels_conv[4])
                 node_object = SubElement(node_root, 'object')
                 node_name = SubElement(node_object, 'name')
                 node_name.text = classes[new_label[0]]
@@ -162,15 +171,15 @@ def YOLO2VOC(classes):
                 node_xmax.text = str(new_label[2])
                 node_ymax = SubElement(node_bndbox, 'ymax')
                 node_ymax.text = str(new_label[4])
-                xml = tostring(node_root, pretty_print=True)
-                dom = parseString(xml)
-        f = open(outpath % img_id, "wb")
-        f.write(xml)
-        f.close()
+            xml = tostring(node_root, pretty_print=True)
+            dom = parseString(xml)
+            f = open(outpath % img_id, "wb")
+            f.write(xml)
+            f.close()
     print("Finished processing")
 
 
-classes = ['gauge', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+classes = ["helmet", "head"]
 
-VOC2YOLO()
-# YOLO2VOC(classes)
+# VOC2YOLO()
+YOLO2VOC(classes)
