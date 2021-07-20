@@ -141,7 +141,8 @@ def train_from_config(config, project_folder):
                                                   config['train']['valid_annot_folder'],
                                                   config['train']['first_trainable_layer'],
                                                   config['train']['valid_metric'],
-                                                  config["train"]["validation_freq"])  # yapf: disable
+                                                  config["train"]["validation_freq"],
+                                                  config["train"]["class_weights"])  # yapf: disable
         else:
             model_layers, model_path = yolo.train_qat(config['train']['train_image_folder'],
                                                       config['train']['train_annot_folder'],

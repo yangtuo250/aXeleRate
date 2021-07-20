@@ -52,7 +52,7 @@ def create_yolo(architecture,
                       Yolo_Recall(obj_thresh, name='recall')]
     }
 
-    yolo_decoder = YoloDecoder(anchors, yolo_params, 0.1, input_size)
+    yolo_decoder = YoloDecoder(anchors, yolo_params, iou_thresh, input_size)
     yolo = YOLO(yolo_network, yolo_loss, yolo_decoder, labels, input_size, yolo_params, metrics_dict)
     return yolo
 
@@ -122,7 +122,8 @@ class YOLO(object):
               valid_ann_folder,
               first_trainable_layer,
               metrics,
-              validation_freq=1):
+              validation_freq=1,
+              class_weights=None):
 
         # 1. get annotations
         train_annotations, valid_annotations = get_train_annotations(self._labels,
@@ -143,7 +144,11 @@ class YOLO(object):
 
         # 2. To train model get keras model instance & loss function
         model = self._yolo_network.get_model(first_trainable_layer)
-        loss = self._get_loss_func(batch_size)
+        loss_writer = tf.summary.create_file_writer("./logs/losses")
+        # with loss_writer.as_default():
+            # tf.summary.experimental.set_step(0)
+        global_step = tf.Variable(0, trainable=False, dtype=tf.int64)
+        loss = self._get_loss_func(batch_size, loss_writer, global_step)
 
         # 3. Run training loop
         return train(model,
@@ -156,7 +161,8 @@ class YOLO(object):
                      first_trainable_layer=first_trainable_layer,
                      metric=self.metrics_dict,
                      metric_name=metrics,
-                     validation_freq=validation_freq)
+                     validation_freq=validation_freq,
+                     class_weights=class_weights)
 
     def prune(self, img_folder, ann_folder, nb_epoch, project_folder, batch_size, jitter, learning_rate, train_times,
               valid_times, valid_img_folder, valid_ann_folder, first_trainable_layer, metrics):
@@ -226,8 +232,8 @@ class YOLO(object):
                          metric=self.metrics_dict,
                          metric_name=metrics)
 
-    def _get_loss_func(self, batch_size):
-        return [self._yolo_loss(self.yolo_params, layer, batch_size) for layer in range(self.num_branches)]
+    def _get_loss_func(self, batch_size, tb_writer, global_step):
+        return [self._yolo_loss(self.yolo_params, layer, batch_size, tb_writer, global_step) for layer in range(self.num_branches)]
 
     def _get_batch_generator(self, annotations, batch_size, repeat_times, augment):
         """

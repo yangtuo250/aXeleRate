@@ -145,7 +145,7 @@ class Converter(object):
             cmd = '{} compile "{}" "{}" -i tflite --weights-quantize-threshold 1000 --dataset-format raw --dataset "{}"'.format(
                 K210_CONVERTER_PATH, model_path, output_path, folder_name)
         elif 3 == KMODEL_VERSION:
-            cmd = "%s -i tflite -o k210model --dataset %s %s %s" % (K210_CONVERTER_PATH, folder_name, model_path, output_path)
+            cmd = "%s -i tflite -o k210model --channelwise-output --postprocess n1to1 --dataset %s %s %s" % (K210_CONVERTER_PATH, folder_name, model_path, output_path)
         else:
             raise RuntimeError("Invalid nncase kmodel version, 3 or 4 is needed")
         print(cmd)

@@ -9,6 +9,7 @@ import tensorflow as tf
 from axelerate.networks.common_utils.callbacks import \
     WarmUpCosineDecayScheduler
 from axelerate.networks.yolo.backend.utils.custom import MergeMetrics
+from axelerate.networks.yolo.backend.utils.map_evaluation import MapEvaluation
 from tensorflow.keras.callbacks import (EarlyStopping, ModelCheckpoint, ReduceLROnPlateau)
 from tensorflow.keras.optimizers import SGD, Adam
 
@@ -23,7 +24,8 @@ def train(model,
           first_trainable_layer=None,
           metric=None,
           metric_name="val_loss",
-          validation_freq=1):
+          validation_freq=1,
+          class_weights=None):
     """A function that performs training on a general keras model.
 
     # Args
@@ -87,21 +89,31 @@ def train(model,
     warm_up_lr = WarmUpCosineDecayScheduler(learning_rate_base=learning_rate,
                                             total_steps=len(train_batch_gen) * nb_epoch,
                                             warmup_learning_rate=0.0,
-                                            warmup_steps=len(train_batch_gen) * min(3, nb_epoch - 1),
+                                            warmup_steps=len(train_batch_gen) * min(min(3, nb_epoch - 1), 1000),
                                             hold_base_rate_steps=0,
                                             verbose=1)
     checkpoint = ModelCheckpoint(os.path.join(path,
                                               "checkpoints",
-                                              "%s-{epoch:02d}-{%s:.4f}.h5" % (basename, "val_loss")),
+                                              "%s-{epoch:04d}-{%s:.4f}.h5" % (basename, "val_loss")),
                                  monitor="val_loss",
                                  verbose=2,
                                  save_best_only=False,
                                  mode='auto',
                                  period=validation_freq)
+    # map_evaluator_cb = MapEvaluation(network,
+    #                                  valid_batch_gen,
+    #                                  save_best=False,
+    #                                  save_name=save_weights_name,
+    #                                  iou_threshold=0.5,
+    #                                  score_threshold=0.3,
+    #                                  tensorboard=tensorboard_callback,
+    #                                  period=validation_freq)
 
     if metric_name in ['recall', 'precision']:
         mergedMetric = MergeMetrics(model, metric_name, validation_freq, True, save_weights_name, tensorboard_callback)
         callbacks = [mergedMetric, warm_up_lr, tensorboard_callback, checkpoint]
+    # if model.name in ['yolo']:
+    #     callbacks = [warm_up_lr, tensorboard_callback, map_evaluator_cb]
     else:
         early_stop = EarlyStopping(monitor='val_' + metric,
                                    min_delta=0.001,

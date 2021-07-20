@@ -15,12 +15,14 @@ class YoloDecoder(object):
         boxes = []
 
         for l, output in enumerate(netout):
+            print("OUTPUT SHAPE: ", output.shape)
             output = np.squeeze(output)
             grid_h, grid_w, nb_box = output.shape[0:3]
 
             # decode the output by the network
             output[..., 4] = _sigmoid(output[..., 4])
-            output[..., 5:] = output[..., 4][..., np.newaxis] * _sigmoid(output[..., 5:])
+            # output[..., 5:] = output[..., 4][..., np.newaxis] * _sigmoid(output[..., 5:])
+            output[..., 5:] = output[..., 4][..., np.newaxis] * _softmax(output[..., 5:])
             output[..., 5:] *= output[..., 5:] > obj_threshold
 
             for row in range(grid_h):
@@ -35,8 +37,8 @@ class YoloDecoder(object):
 
                             x = (col + _sigmoid(x)) / grid_w  # center position, unit: image width
                             y = (row + _sigmoid(y)) / grid_h  # center position, unit: image height
-                            w = self.anchors[l][b][0] * np.exp(w) / grid_w  # unit: image width
-                            h = self.anchors[l][b][1] * np.exp(h) / grid_w  # unit: image height
+                            w = self.anchors[l][b][0] * np.exp(w)  # unit: image width
+                            h = self.anchors[l][b][1] * np.exp(h)  # unit: image height
                             confidence = output[row, col, b, 4]
                             box = BoundBox(x, y, w, h, confidence, classes)
                             boxes.append(box)
@@ -49,3 +51,11 @@ class YoloDecoder(object):
 
 def _sigmoid(x):
     return 1. / (1. + np.exp(-x))
+
+
+def _softmax(x, axis=-1, t=-100.):
+    x = x - np.max(x)
+    if np.min(x) < t:
+        x = x / np.min(x) * t
+    e_x = np.exp(x)
+    return e_x / e_x.sum(axis, keepdims=True)

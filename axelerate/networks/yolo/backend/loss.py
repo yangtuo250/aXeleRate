@@ -7,6 +7,7 @@ import skimage
 import cv2
 from math import cos, sin
 
+
 def tf_xywh_to_all(grid_pred_xy, grid_pred_wh, layer, params):
     """ rescale the pred raw [grid_pred_xy,grid_pred_wh] to [0~1]
 
@@ -59,7 +60,8 @@ def tf_xywh_to_grid(all_true_xy, all_true_wh, layer, params):
     return grid_true_xy, grid_true_wh
 
 
-def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor, p_wh_A: tf.Tensor, layer: int, params) -> tuple:
+def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor, p_wh_A: tf.Tensor, layer: int,
+                   params) -> tuple:
     """ reshape the xywh to [?,h,w,anchor_nums,true_box_nums,2]
         NOTE  must use obj mask in atrue xywh !
     Parameters
@@ -90,8 +92,12 @@ def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor
         true_cent = true_xy_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
         true_box_wh = true_wh_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
 
-        true_cent = tf.tile(true_cent, [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
-        true_box_wh = tf.tile(true_box_wh, [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
+        true_cent = tf.tile(
+            true_cent,
+            [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
+        true_box_wh = tf.tile(
+            true_box_wh,
+            [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
 
         pred_cent = p_xy_A[..., tf.newaxis, :]
         pred_box_wh = p_wh_A[..., tf.newaxis, :]
@@ -146,7 +152,14 @@ def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor, vaild_xy: tf.Tensor, vaild_wh
     return iou
 
 
-def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor, p_wh: tf.Tensor, obj_mask: tf.Tensor, iou_thresh: float, layer: int, params) -> tf.Tensor:
+def calc_ignore_mask(t_xy_A: tf.Tensor,
+                     t_wh_A: tf.Tensor,
+                     p_xy: tf.Tensor,
+                     p_wh: tf.Tensor,
+                     obj_mask: tf.Tensor,
+                     iou_thresh: float,
+                     layer: int,
+                     params) -> tf.Tensor:
     """clac the ignore mask
 
     Parameters
@@ -186,7 +199,6 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor, p_wh
 
 
 class Params:
-
     def __init__(self, obj_thresh, iou_thresh, obj_weight, noobj_weight, wh_weight, out_hw, anchors, class_num):
         self.obj_thresh = obj_thresh
         self.iou_thresh = iou_thresh
@@ -247,14 +259,15 @@ class Params:
         return np.array([anchors[i] * grid_wh[i] for i in range(len(anchors))])
 
 
-def create_loss_fn(params, layer, batch_size):
+def create_loss_fn(params, layer, batch_size, tb_writer, global_step):
 
     params.batch_size = batch_size
     shapes = [[-1] + list(params.out_hw[layer]) + [len(params.anchors[layer]), params.class_num + 5]]
+
     #print(shapes)
     # @tf.function
     def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor):
-        #print(y_true, y_pred)
+        # print(y_true.shape, y_pred.shape)
         """ split the label """
         grid_pred_xy = y_pred[..., 0:2]
         grid_pred_wh = y_pred[..., 2:4]
@@ -265,42 +278,62 @@ def create_loss_fn(params, layer, batch_size):
         all_true_wh = y_true[..., 2:4]
         true_confidence = y_true[..., 4:5]
         true_cls = y_true[..., 5:]
+        # true_cls = tf.argmax(true_cls, axis=-1)
+        # true_cls = tf.expand_dims(true_cls, -1)
 
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
         obj_mask_bool = y_true[..., 4] > params.obj_thresh
-
         """ calc the ignore mask  """
 
-        ignore_mask = calc_ignore_mask(all_true_xy, all_true_wh, grid_pred_xy,
-                                       grid_pred_wh, obj_mask_bool,
-                                       params.iou_thresh, layer, params)
+        ignore_mask = calc_ignore_mask(all_true_xy,
+                                       all_true_wh,
+                                       grid_pred_xy,
+                                       grid_pred_wh,
+                                       obj_mask_bool,
+                                       params.iou_thresh,
+                                       layer,
+                                       params)
 
         grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, layer, params)
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
         grid_true_wh = K.switch(obj_mask_bool, grid_true_wh, tf.zeros_like(grid_true_wh))
-
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
 
-        xy_loss = tf.reduce_sum(
-            obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=grid_true_xy, logits=grid_pred_xy)) / params.batch_size
+        xy_loss = tf.reduce_sum(obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=grid_true_xy, logits=grid_pred_xy)) / params.batch_size
 
-        wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * params.wh_weight * tf.square(tf.subtract(
-                x=grid_true_wh, y=grid_pred_wh))) / params.batch_size
+        wh_loss = tf.reduce_sum(obj_mask * coord_weight * params.wh_weight *
+                                tf.square(tf.subtract(x=grid_true_wh, y=grid_pred_wh))) / params.batch_size
 
-        obj_loss = params.obj_weight * tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence)) / params.batch_size
+        obj_loss = params.obj_weight * tf.reduce_sum(obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=true_confidence, logits=pred_confidence)) / params.batch_size
 
         noobj_loss = params.noobj_weight * tf.reduce_sum(
-            (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence)) / params.batch_size
+            (1 - obj_mask) * ignore_mask *
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=true_confidence, logits=pred_confidence)) / params.batch_size
 
-        cls_loss = tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls)) / params.batch_size
+        # print(true_cls.shape, pred_cls.shape)
+        # cls_loss = tf.reduce_sum(
+        #     obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
+        #         labels=true_cls, logits=pred_cls)) / params.batch_size
+        # cls_loss = tf.reduce_sum(
+        #     obj_mask * tf.nn.softmax_cross_entropy_with_logits(labels=true_cls, logits=pred_cls)) / params.batch_size
+        cls_loss = tf.nn.softmax_cross_entropy_with_logits(labels=true_cls, logits=pred_cls)
+        # print(obj_mask.shape, cls_loss.shape)
+        cls_loss = tf.reduce_sum(obj_mask * tf.expand_dims(cls_loss, -1)) / params.batch_size
+
+        # with tb_writer.as_default():
+        #     global_step.assign_add(1)
+        #     tf.print("STEP: ", global_step)
+        #     if tf.math.equal(tf.math.mod(global_step, params.batch_size), 0):
+        #         tf.print("Recording losses on step: ", global_step)
+        #         tf.summary.scalar('xy_loss', xy_loss, step=tf.cast(tf.math.divide(global_step, params.batch_size), dtype=tf.int64))
+        #         tf.summary.scalar('wh_loss', wh_loss, step=tf.cast(tf.math.divide(global_step, params.batch_size), dtype=tf.int64))
+        #         tf.summary.scalar('obj_loss', obj_loss, step=tf.cast(tf.math.divide(global_step, params.batch_size), dtype=tf.int64))
+        #         tf.summary.scalar('noobj_loss', noobj_loss, step=tf.cast(tf.math.divide(global_step, params.batch_size), dtype=tf.int64))
+        #         tf.summary.scalar("cls_loss", cls_loss, step=tf.cast(tf.math.divide(global_step, params.batch_size), dtype=tf.int64))
+        #         tb_writer.flush()
 
         total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
