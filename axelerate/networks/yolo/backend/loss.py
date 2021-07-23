@@ -19,7 +19,8 @@ class YoloLoss(object):
                  coord_scale=1.0,
                  class_scale=1.0,
                  object_scale=5.0,
-                 no_object_scale=1.0):
+                 no_object_scale=1.0,
+                 class_weights=None):
         """
         # Args
             grid_size : int
@@ -33,6 +34,7 @@ class YoloLoss(object):
         self.anchors = anchors
         self.nb_box = int(len(anchors)/2)
         self.nb_class = nb_class
+        self.class_weights = class_weights
 
         self.coord_scale = coord_scale
 
@@ -55,7 +57,7 @@ class YoloLoss(object):
 
             # 2. mask
             coord_mask = self._mask.create_coord_mask(y_true)
-            class_mask = self._mask.create_class_mask(y_true, true_box_class)
+            class_mask = self._mask.create_class_mask(y_true, true_box_class, self.class_weights)
             conf_mask = self._mask.create_conf_mask(y_true, pred_tensor, batch_size)
             
             """
@@ -215,7 +217,7 @@ class _Mask(object):
         mask = tf.expand_dims(y_true[..., BOX_IDX_CONFIDENCE], axis=-1) * self._coord_scale
         return mask
     
-    def create_class_mask(self, y_true, true_box_class):
+    def create_class_mask(self, y_true, true_box_class, class_weights):
         """ Simply the position of the ground truth boxes (the predictors)
 
         # Args
@@ -226,7 +228,10 @@ class _Mask(object):
         # Returns
             mask : Tensor, shape of (None, grid, grid, nb_box)
         """
-        class_wt = np.ones(self._nb_class, dtype='float32')
+        if class_weights:
+            class_wt = np.ones(self._nb_class, dtype='float32')
+        else:
+            class_wt = np.array(class_weights, dtype='float32')
         mask = y_true[..., 4] * tf.gather(class_wt, true_box_class) * self._class_scale
         return mask
     

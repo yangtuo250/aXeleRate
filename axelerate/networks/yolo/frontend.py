@@ -24,23 +24,25 @@ def get_object_labels(ann_directory):
 def create_yolo(architecture,
                 labels,
                 input_size=416,
-                anchors=[
-                    0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434,
-                    7.88282, 3.52778, 9.77052, 9.16828
-                ],
+                anchors=[0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434, 7.88282, 3.52778, 9.77052, 9.16828],
                 coord_scale=1.0,
                 class_scale=1.0,
                 object_scale=5.0,
                 no_object_scale=1.0,
-                weights=None):
+                weights=None,
+                class_weights=None):
 
     n_classes = len(labels)
     n_boxes = int(len(anchors) / 2)
-    yolo_network = create_yolo_network(architecture, input_size, n_classes,
-                                       n_boxes, weights)
-    yolo_loss = YoloLoss(yolo_network.get_grid_size(), n_classes, anchors,
-                         coord_scale, class_scale, object_scale,
-                         no_object_scale)
+    yolo_network = create_yolo_network(architecture, input_size, n_classes, n_boxes, weights)
+    yolo_loss = YoloLoss(yolo_network.get_grid_size(),
+                         n_classes,
+                         anchors,
+                         coord_scale,
+                         class_scale,
+                         object_scale,
+                         no_object_scale,
+                         class_weights)
 
     yolo_decoder = YoloDecoder(anchors)
     yolo = YOLO(yolo_network, yolo_loss, yolo_decoder, labels, input_size)
