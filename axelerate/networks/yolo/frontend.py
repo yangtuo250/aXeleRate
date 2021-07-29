@@ -13,11 +13,9 @@ from axelerate.networks.yolo.backend.batch_gen import create_batch_generator
 from axelerate.networks.yolo.backend.decoder import YoloDecoder
 from axelerate.networks.yolo.backend.loss import Params, create_loss_fn
 from axelerate.networks.yolo.backend.network import create_yolo_network
-from axelerate.networks.yolo.backend.utils.annotation import (
-    get_train_annotations, get_unique_labels)
+from axelerate.networks.yolo.backend.utils.annotation import (get_train_annotations, get_unique_labels)
 from axelerate.networks.yolo.backend.utils.box import to_minmax
-from axelerate.networks.yolo.backend.utils.custom import (Yolo_Precision,
-                                                          Yolo_Recall)
+from axelerate.networks.yolo.backend.utils.custom import (Yolo_Precision, Yolo_Recall)
 
 
 def get_object_labels(ann_directory):
@@ -35,21 +33,27 @@ def create_yolo(architecture,
                 coord_scale,
                 object_scale,
                 no_object_scale,
-                weights=None):
+                weights=None,
+                class_weights=None):
 
     n_classes = len(labels)
     n_boxes = int(len(anchors[0]))
     n_branches = len(anchors)
     yolo_network = create_yolo_network(architecture, input_size, n_classes, n_boxes, n_branches, weights)
-    yolo_params = Params(obj_thresh, iou_thresh, object_scale, no_object_scale, coord_scale, yolo_network.get_grid_size(),
-                         anchors, n_classes)
+    yolo_params = Params(obj_thresh,
+                         iou_thresh,
+                         object_scale,
+                         no_object_scale,
+                         coord_scale,
+                         yolo_network.get_grid_size(),
+                         anchors,
+                         n_classes,
+                         class_weights)
     yolo_loss = create_loss_fn
 
     metrics_dict = {
-        'recall': [Yolo_Precision(obj_thresh, name='precision'),
-                   Yolo_Recall(obj_thresh, name='recall')],
-        'precision': [Yolo_Precision(obj_thresh, name='precision'),
-                      Yolo_Recall(obj_thresh, name='recall')]
+        'recall': [Yolo_Precision(obj_thresh, name='precision'), Yolo_Recall(obj_thresh, name='recall')],
+        'precision': [Yolo_Precision(obj_thresh, name='precision'), Yolo_Recall(obj_thresh, name='recall')]
     }
 
     yolo_decoder = YoloDecoder(anchors, yolo_params, iou_thresh, input_size)
@@ -146,7 +150,7 @@ class YOLO(object):
         model = self._yolo_network.get_model(first_trainable_layer)
         loss_writer = tf.summary.create_file_writer("./logs/losses")
         # with loss_writer.as_default():
-            # tf.summary.experimental.set_step(0)
+        # tf.summary.experimental.set_step(0)
         global_step = tf.Variable(0, trainable=False, dtype=tf.int64)
         loss = self._get_loss_func(batch_size, loss_writer, global_step)
 
@@ -161,11 +165,24 @@ class YOLO(object):
                      first_trainable_layer=first_trainable_layer,
                      metric=self.metrics_dict,
                      metric_name=metrics,
+                     network=self,
                      validation_freq=validation_freq,
                      class_weights=class_weights)
 
-    def prune(self, img_folder, ann_folder, nb_epoch, project_folder, batch_size, jitter, learning_rate, train_times,
-              valid_times, valid_img_folder, valid_ann_folder, first_trainable_layer, metrics):
+    def prune(self,
+              img_folder,
+              ann_folder,
+              nb_epoch,
+              project_folder,
+              batch_size,
+              jitter,
+              learning_rate,
+              train_times,
+              valid_times,
+              valid_img_folder,
+              valid_ann_folder,
+              first_trainable_layer,
+              metrics):
 
         # 1. get annotations
         train_annotations, valid_annotations = get_train_annotations(self._labels,
@@ -198,8 +215,20 @@ class YOLO(object):
                      metric=self.metrics_dict,
                      metric_name=metrics)
 
-    def train_qat(self, img_folder, ann_folder, nb_epoch, project_folder, batch_size, jitter, learning_rate, train_times,
-                  valid_times, valid_img_folder, valid_ann_folder, first_trainable_layer, metrics):
+    def train_qat(self,
+                  img_folder,
+                  ann_folder,
+                  nb_epoch,
+                  project_folder,
+                  batch_size,
+                  jitter,
+                  learning_rate,
+                  train_times,
+                  valid_times,
+                  valid_img_folder,
+                  valid_ann_folder,
+                  first_trainable_layer,
+                  metrics):
 
         # 1. get annotations
         train_annotations, valid_annotations = get_train_annotations(self._labels,
@@ -233,7 +262,10 @@ class YOLO(object):
                          metric_name=metrics)
 
     def _get_loss_func(self, batch_size, tb_writer, global_step):
-        return [self._yolo_loss(self.yolo_params, layer, batch_size, tb_writer, global_step) for layer in range(self.num_branches)]
+        return [
+            self._yolo_loss(self.yolo_params, layer, batch_size, tb_writer, global_step)
+            for layer in range(self.num_branches)
+        ]
 
     def _get_batch_generator(self, annotations, batch_size, repeat_times, augment):
         """

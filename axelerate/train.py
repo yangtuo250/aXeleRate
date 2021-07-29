@@ -121,7 +121,8 @@ def train_from_config(config, project_folder):
                            config['model']['coord_scale'],
                            config['model']['object_scale'],
                            config['model']['no_object_scale'],
-                           config['weights']['backend'])
+                           config['weights']['backend'],
+                           config['train']['class_weights'])
 
         # 2. Load the pretrained weights (if any)
         yolo.load_weights(config['weights']['full'], by_name=True)

@@ -199,7 +199,16 @@ def calc_ignore_mask(t_xy_A: tf.Tensor,
 
 
 class Params:
-    def __init__(self, obj_thresh, iou_thresh, obj_weight, noobj_weight, wh_weight, out_hw, anchors, class_num):
+    def __init__(self,
+                 obj_thresh,
+                 iou_thresh,
+                 obj_weight,
+                 noobj_weight,
+                 wh_weight,
+                 out_hw,
+                 anchors,
+                 class_num,
+                 class_weights):
         self.obj_thresh = obj_thresh
         self.iou_thresh = iou_thresh
         self.wh_weight = wh_weight
@@ -216,6 +225,7 @@ class Params:
         self.xy_offset = Params._coordinate_offset(self.anchors, self.out_hw)
 
         self.batch_size = None
+        self.class_weights = class_weights
 
     @staticmethod
     def _coordinate_offset(anchors: np.ndarray, out_hw: np.ndarray) -> np.array:
@@ -278,11 +288,15 @@ def create_loss_fn(params, layer, batch_size, tb_writer, global_step):
         all_true_wh = y_true[..., 2:4]
         true_confidence = y_true[..., 4:5]
         true_cls = y_true[..., 5:]
-        # true_cls = tf.argmax(true_cls, axis=-1)
-        # true_cls = tf.expand_dims(true_cls, -1)
+        sparse_true_cls = tf.argmax(true_cls, axis=-1)
+        sparse_true_cls = tf.expand_dims(sparse_true_cls, -1)
 
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
         obj_mask_bool = y_true[..., 4] > params.obj_thresh
+        if params.class_weights:
+            cls_mask = obj_mask * tf.gather(np.array(params.class_weights, dtype=np.float32), sparse_true_cls)
+        else:
+            cls_mask = obj_mask
         """ calc the ignore mask  """
 
         ignore_mask = calc_ignore_mask(all_true_xy,

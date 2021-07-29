@@ -1,6 +1,7 @@
 import cv2
 import os
 import numpy as np
+
 np.random.seed(1337)
 
 from tensorflow.keras.utils import Sequence
@@ -8,14 +9,8 @@ from axelerate.networks.common_utils.augment import ImgAugment
 from axelerate.networks.yolo.backend.utils.box import to_centroid, create_anchor_boxes, find_match_box
 from axelerate.networks.common_utils.fit import train
 
-def create_batch_generator(annotations, 
-                           input_size,
-                           grid_sizes,
-                           batch_size,
-                           anchors,
-                           repeat_times,
-                           augment, 
-                           norm=None):
+
+def create_batch_generator(annotations, input_size, grid_sizes, batch_size, anchors, repeat_times, augment, norm=None):
     """
     # Args
         annotations : Annotations instance in utils.annotation module
@@ -28,25 +23,12 @@ def create_batch_generator(annotations,
     yolo_box = _YoloBox(input_size, grid_sizes)
     netin_gen = _NetinGen(input_size, norm)
     netout_gen = _NetoutGen(grid_sizes, annotations.n_classes(), anchors)
-    worker = BatchGenerator(netin_gen,
-                            netout_gen,
-                            yolo_box,
-                            img_aug,
-                            annotations,
-                            batch_size,
-                            repeat_times)
+    worker = BatchGenerator(netin_gen, netout_gen, yolo_box, img_aug, annotations, batch_size, repeat_times)
     return worker
 
 
 class BatchGenerator(Sequence):
-    def __init__(self,
-                 netin_gen,
-                 netout_gen,
-                 yolo_box,
-                 img_aug,
-                 annotations,
-                 batch_size,
-                 repeat_times):
+    def __init__(self, netin_gen, netout_gen, yolo_box, img_aug, annotations, batch_size, repeat_times):
         """
         # Args
             annotations : Annotations instance
@@ -58,13 +40,13 @@ class BatchGenerator(Sequence):
         self._img_aug = img_aug
         self._yolo_box = yolo_box
 
-        self._batch_size = min(batch_size, len(annotations)*repeat_times)
+        self._batch_size = min(batch_size, len(annotations) * repeat_times)
         self._repeat_times = repeat_times
         self.annotations = annotations
         self.counter = 0
 
     def __len__(self):
-        return int(len(self.annotations) * self._repeat_times /self._batch_size)
+        return int(len(self.annotations) * self._repeat_times / self._batch_size)
 
     def __getitem__(self, idx):
         """
@@ -79,9 +61,9 @@ class BatchGenerator(Sequence):
 
         for i in range(self._batch_size):
             # 1. get input file & its annotation
-            fname = self.annotations.fname(self._batch_size*idx + i)
-            boxes = self.annotations.boxes(self._batch_size*idx + i)
-            labels = self.annotations.code_labels(self._batch_size*idx + i)
+            fname = self.annotations.fname(self._batch_size * idx + i)
+            boxes = self.annotations.boxes(self._batch_size * idx + i)
+            labels = self.annotations.code_labels(self._batch_size * idx + i)
 
             # 2. read image in fixed size
             img, boxes, labels = self._img_aug.imread(fname, boxes, labels)
@@ -91,20 +73,20 @@ class BatchGenerator(Sequence):
             else:
                 norm_boxes = []
                 labels = []
-            
+
             # 4. generate x_batch
             x_batch.append(self._netin_gen.run(img))
             processed_labels = self._netout_gen.run(norm_boxes, labels)
 
             y_batch1.append(processed_labels[0])
-            if self.nb_stages == 2:           
+            if self.nb_stages == 2:
                 y_batch2.append(processed_labels[1])
 
         x_batch = np.array(x_batch)
         y_batch1 = np.array(y_batch1)
         batch = y_batch1
 
-        if self.nb_stages == 2:           
+        if self.nb_stages == 2:
             y_batch2 = np.array(y_batch2)
             batch = [y_batch1, y_batch2]
 
@@ -115,8 +97,27 @@ class BatchGenerator(Sequence):
         self.annotations.shuffle()
         self.counter = 0
 
+    def load_batch(self, idx):
+        imgs_list = []
+        anns_list = []
+        for i in range(self._batch_size):
+            fname = self.annotations.fname(self._batch_size * idx + i)
+            boxes = self.annotations.boxes(self._batch_size * idx + i)
+            labels = self.annotations.code_labels(self._batch_size * idx + i)
+            img, boxes, labels = self._img_aug.imread(fname, boxes, labels)
+            imgs_list.append(self._netin_gen.run(img))
+            annotations = []
+            for j in range(len(boxes)):
+                annotation = []
+                for item in boxes[j].tolist():
+                    annotation.append(item)
+                annotation.append(labels[j])
+                annotations.append(annotation)
+            anns_list.append(np.array(annotations))
+        return imgs_list, np.array(anns_list)
+
+
 class _YoloBox(object):
-    
     def __init__(self, input_size, grid_size):
         self._input_size = input_size
         self._grid_size = grid_size
@@ -135,30 +136,29 @@ class _YoloBox(object):
         centroid_boxes = to_centroid(boxes).astype(np.float32)
         # 2. [[120. 160.  40.  80.]] image scale -> imga scle 0 ~ 1 [[4.        5.        1.3333334 2.5      ]]
         norm_boxes = np.zeros_like(centroid_boxes)
-        norm_boxes[:,0::2] = centroid_boxes[:,0::2] / self._input_size[1]
-        norm_boxes[:,1::2] = centroid_boxes[:,1::2] / self._input_size[0]
+        norm_boxes[:, 0::2] = centroid_boxes[:, 0::2] / self._input_size[1]
+        norm_boxes[:, 1::2] = centroid_boxes[:, 1::2] / self._input_size[0]
         #print("norm boxes", norm_boxes)
         return norm_boxes
+
 
 class _NetinGen(object):
     def __init__(self, input_size, norm):
         self._input_size = input_size
         self._norm = self._set_norm(norm)
-    
+
     def run(self, image):
         return self._norm(image)
-    
+
     def _set_norm(self, norm):
         if norm is None:
             return lambda x: x
         else:
             return norm
 
+
 class _NetoutGen(object):
-    def __init__(self,
-                 grid_sizes,
-                 nb_classes,
-                 anchors):
+    def __init__(self, grid_sizes, nb_classes, anchors):
         self.nb_classes = nb_classes
         self.anchors = np.asarray(anchors)
         self._tensor_shape = self._set_tensor_shape(grid_sizes, nb_classes)
@@ -175,7 +175,7 @@ class _NetoutGen(object):
         labels = np.asarray([labels])
         norm_boxes = np.asarray(norm_boxes)
         if len(norm_boxes) > 0:
-            norm_boxes= np.concatenate((labels.T, norm_boxes), axis = 1)
+            norm_boxes = np.concatenate((labels.T, norm_boxes), axis=1)
         #print("boxes", boxes)
         y = self.box_to_label(norm_boxes)
         #print(y.shape)
@@ -183,7 +183,7 @@ class _NetoutGen(object):
 
     def _set_tensor_shape(self, grid_size, nb_classes):
         nb_boxes = len(self.anchors[0])
-        return [(grid_size[i][0], grid_size[i][1], nb_boxes, 4+1+nb_classes) for i in range(len(self.anchors))]
+        return [(grid_size[i][0], grid_size[i][1], nb_boxes, 4 + 1 + nb_classes) for i in range(len(self.anchors))]
 
     def _xy_grid_index(self, box_xy: np.ndarray, layer: int):
         """ get xy index in grid scale
@@ -267,8 +267,10 @@ class _NetoutGen(object):
         tuple
             labels list value :[output_number*[out_h,out_w,anchor_num,class+5]]
         """
-        labels = [np.zeros((self._tensor_shape[i][0], self._tensor_shape[i][1], len(self.anchors[i]),
-                            5 + self.nb_classes), dtype='float32') for i in range(len(self.anchors))]
+        labels = [
+            np.zeros((self._tensor_shape[i][0], self._tensor_shape[i][1], len(self.anchors[i]), 5 + self.nb_classes),
+                     dtype='float32') for i in range(len(self.anchors))
+        ]
         for box in true_box:
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]

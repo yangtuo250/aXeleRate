@@ -23,6 +23,7 @@ def train(model,
           project_folder='project',
           first_trainable_layer=None,
           metric=None,
+          network=None,
           metric_name="val_loss",
           validation_freq=1,
           class_weights=None):
@@ -43,11 +44,11 @@ def train(model,
     train_start = time.time()
     train_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     path = os.path.join(project_folder, train_date)
-    basename = model.name + "_best_" + metric_name
+    basename = model.name + "{}" + metric_name
     print('Current training session folder is {}'.format(path))
     os.makedirs(path)
     save_weights_name = os.path.join(path, basename + '.h5')
-    save_weights_name_ctrlc = os.path.join(path, basename + '_ctrlc.h5')
+    # save_weights_name_ctrlc = os.path.join(path, basename + '_ctrlc.h5')
     print('\n')
 
     # 1 Freeze layers
@@ -100,18 +101,16 @@ def train(model,
                                  save_best_only=False,
                                  mode='auto',
                                  period=validation_freq)
-    # map_evaluator_cb = MapEvaluation(network,
-    #                                  valid_batch_gen,
-    #                                  save_best=False,
-    #                                  save_name=save_weights_name,
-    #                                  iou_threshold=0.5,
-    #                                  score_threshold=0.3,
-    #                                  tensorboard=tensorboard_callback,
-    #                                  period=validation_freq)
+    map_evaluator_cb = MapEvaluation(network,
+                                     valid_batch_gen,
+                                     save_best=False,
+                                     save_name=save_weights_name,
+                                     tensorboard=tensorboard_callback,
+                                     period=validation_freq)
 
     if metric_name in ['recall', 'precision']:
-        mergedMetric = MergeMetrics(model, metric_name, validation_freq, True, save_weights_name, tensorboard_callback)
-        callbacks = [mergedMetric, warm_up_lr, tensorboard_callback, checkpoint]
+        # mergedMetric = MergeMetrics(model, metric_name, validation_freq, True, save_weights_name, tensorboard_callback)
+        callbacks = [warm_up_lr, tensorboard_callback, map_evaluator_cb]
     # if model.name in ['yolo']:
     #     callbacks = [warm_up_lr, tensorboard_callback, map_evaluator_cb]
     else:
@@ -145,9 +144,9 @@ def train(model,
                   validation_freq=validation_freq)
     except KeyboardInterrupt:
         print("Saving model and copying logs")
-        model.save(save_weights_name_ctrlc, overwrite=True, include_optimizer=False)
+        model.save(save_weights_name.format("_ctrlc_"), overwrite=True, include_optimizer=False)
         shutil.copytree("logs", os.path.join(path, "logs"))
-        return model.layers, save_weights_name_ctrlc
+        return model.layers, save_weights_name.format("_ctrlc_")
 
     shutil.copytree("logs", os.path.join(path, "logs"))
     _print_time(time.time() - train_start)

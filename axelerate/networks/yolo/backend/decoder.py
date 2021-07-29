@@ -15,7 +15,7 @@ class YoloDecoder(object):
         boxes = []
 
         for l, output in enumerate(netout):
-            print("OUTPUT SHAPE: ", output.shape)
+            # print("OUTPUT SHAPE: ", output.shape)
             output = np.squeeze(output)
             grid_h, grid_w, nb_box = output.shape[0:3]
 
