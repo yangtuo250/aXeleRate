@@ -5,6 +5,8 @@ dist/
 _configs/
 projects/
 *.tflite
+*.h5
+*.kmodel
 *.txt
 mydata/
 axelerate/networks/common_utils/tmp/
